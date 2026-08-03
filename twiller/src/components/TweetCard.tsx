@@ -10,6 +10,7 @@ import {
   Repeat2,
   Share,
   MoreHorizontal,
+  Volume2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import axiosInstance from "@/lib/axiosInstance";
@@ -109,6 +110,18 @@ export default function TweetCard({ tweet }: any) {
                   alt="Tweet image"
                   className="w-full h-auto max-h-96 object-cover"
                 />
+              </div>
+            )}
+
+            {tweetstate.audio && (
+              <div className="mb-3 p-3 bg-gray-950 border border-gray-800 rounded-2xl flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Volume2 className="h-4 w-4 text-blue-400 animate-pulse" />
+                  <span className="text-xs text-gray-500 font-mono font-bold">
+                    Voice Note {tweetstate.audioDuration ? `(${tweetstate.audioDuration}s)` : ""}
+                  </span>
+                </div>
+                <audio src={tweetstate.audio} controls className="w-full h-8" onClick={(e) => e.stopPropagation()} />
               </div>
             )}
 

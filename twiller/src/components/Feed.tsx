@@ -85,9 +85,15 @@ const tweets: Tweet[] = [
       "https://images.pexels.com/photos/196645/pexels-photo-196645.jpeg?auto=compress&cs=tinysrgb&w=800",
   },
 ];
+import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+
 const Feed = () => {
+  const { user } = useAuth();
+  const { t } = useLanguage();
   const [tweets, setTweets] = useState<any>([]);
   const [loading, setloading] = useState(false);
+
   const fetchTweets = async () => {
     try {
       setloading(true);
@@ -99,17 +105,74 @@ const Feed = () => {
       setloading(false);
     }
   };
+
   useEffect(() => {
     fetchTweets();
-  }, []);
+
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+
+    // Set up polling for real-time tweets and cricket + science notification matches
+    const interval = setInterval(async () => {
+      try {
+        const res = await axiosInstance.get("/post");
+        const latestTweets = res.data;
+        
+        setTweets((prevTweets: any) => {
+          const prevIds = new Set(prevTweets.map((t: any) => t._id));
+          const newTweets = latestTweets.filter((t: any) => !prevIds.has(t._id));
+          
+          if (newTweets.length > 0) {
+            newTweets.forEach((t: any) => {
+              // Trigger desktop notification if conditions met
+              if (user && user.notificationsEnabled) {
+                const text = (t.content || "").toLowerCase();
+                if (text.includes("cricket") && text.includes("science")) {
+                  if (Notification.permission === "granted") {
+                    new Notification(`Twiller Match: @${t.author?.username || "user"}`, {
+                      body: t.content,
+                      icon: t.author?.avatar || "https://images.pexels.com/photos/1139743/pexels-photo-1139743.jpeg?auto=compress&cs=tinysrgb&w=400"
+                    });
+                  }
+                }
+              }
+            });
+            return latestTweets;
+          }
+          return prevTweets;
+        });
+      } catch (err) {
+        console.error("Failed to poll tweets:", err);
+      }
+    }, 10000); // 10s poll
+
+    return () => clearInterval(interval);
+  }, [user]);
+
   const handlenewtweet = (newtweet: any) => {
     setTweets((prev: any) => [newtweet, ...prev]);
+    
+    // Check notification trigger on own tweet post (optional but helpful)
+    if (user && user.notificationsEnabled) {
+      const text = (newtweet.content || "").toLowerCase();
+      if (text.includes("cricket") && text.includes("science")) {
+        if (Notification.permission === "granted") {
+          new Notification(`Twiller Match (Self): @${user.username}`, {
+            body: newtweet.content,
+            icon: user.avatar
+          });
+        }
+      }
+    }
   };
   return (
     <div className="min-h-screen">
       <div className="sticky top-0 bg-black/90 backdrop-blur-md border-b border-gray-800 z-10">
         <div className="px-4 py-3">
-          <h1 className="text-xl font-bold text-white">Home</h1>
+          <h1 className="text-xl font-bold text-white">{t('home')}</h1>
         </div>
 
         <Tabs defaultValue="foryou" className="w-full">

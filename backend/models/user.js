@@ -8,6 +8,21 @@ const UserSchema = mongoose.Schema({
   location: { type: String, default: "" },
   website: { type: String, default: "" },
   joinedDate: { type: Date, default: Date.now() },
+  plan: { type: String, default: "Free", enum: ["Free", "Bronze", "Silver", "Gold"] },
+  subscriptionStartDate: { type: Date, default: Date.now },
+  subscriptionEndDate: { type: Date },
+  loginHistory: [{
+    ip: String,
+    browser: String,
+    os: String,
+    device: String,
+    timestamp: { type: Date, default: Date.now }
+  }],
+  notificationsEnabled: { type: Boolean, default: true },
+  language: { type: String, default: "English" },
+  mobileNumber: { type: String, default: "" },
+  forgotPasswordRequests: [{ type: Date }]
 });
 
 export default mongoose.model("User", UserSchema);
+

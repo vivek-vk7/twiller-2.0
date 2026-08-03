@@ -12,6 +12,44 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { auth } from "./firebase";
 import axiosInstance from "../lib/axiosInstance";
 
+export function getClientDetails() {
+  if (typeof window === "undefined") {
+    return { browser: "Other", os: "Other", device: "Desktop/Laptop" };
+  }
+  const ua = navigator.userAgent;
+  let browser = "Other";
+  let os = "Other";
+  let device = "Desktop/Laptop";
+
+  if (ua.includes("Edg") || ua.includes("Edge")) {
+    browser = "Microsoft Edge";
+  } else if (ua.includes("Chrome") && !ua.includes("Chromium")) {
+    browser = "Google Chrome";
+  } else if (ua.includes("Safari") && !ua.includes("Chrome")) {
+    browser = "Safari";
+  } else if (ua.includes("Firefox")) {
+    browser = "Firefox";
+  }
+
+  if (ua.includes("Windows")) {
+    os = "Windows";
+  } else if (ua.includes("Macintosh") || ua.includes("Mac OS")) {
+    os = "macOS";
+  } else if (ua.includes("Android")) {
+    os = "Android";
+  } else if (ua.includes("iPhone") || ua.includes("iPad")) {
+    os = "iOS";
+  } else if (ua.includes("Linux")) {
+    os = "Linux";
+  }
+
+  if (/Mobi|Android|iPhone|iPad|iPod/i.test(ua)) {
+    device = "Mobile";
+  }
+
+  return { browser, os, device };
+}
+
 interface User {
   _id: string;
   username: string;
@@ -22,6 +60,13 @@ interface User {
   email: string;
   website: string;
   location: string;
+  plan?: string;
+  subscriptionStartDate?: string;
+  subscriptionEndDate?: string;
+  loginHistory?: any[];
+  notificationsEnabled?: boolean;
+  language?: string;
+  mobileNumber?: string;
 }
 
 interface AuthContextType {
@@ -43,6 +88,8 @@ interface AuthContextType {
   logout: () => void;
   isLoading: boolean;
   googlesignin: () => void;
+  edgeLogin: (email: string) => Promise<void>;
+  setUser: React.Dispatch<React.SetStateAction<any>>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,6 +101,7 @@ export const useAuth = () => {
   }
   return context;
 };
+
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -78,8 +126,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           console.log("Failed to fetch user:", err);
         }
       } else {
-        setUser(null);
-        localStorage.removeItem("twitter-user");
+        // Fallback for Microsoft browser passwordless flow which uses localStorage only
+        const localUser = localStorage.getItem("twitter-user");
+        if (localUser) {
+          setUser(JSON.parse(localUser));
+        } else {
+          setUser(null);
+        }
       }
       setIsLoading(false);
     });
@@ -88,7 +141,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
-    // Mock authentication - in real app, this would call an API
     const usercred = await signInWithEmailAndPassword(auth, email, password);
     const firebaseuser = usercred.user;
     const res = await axiosInstance.get("/loggedinuser", {
@@ -97,16 +149,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     if (res.data) {
       setUser(res.data);
       localStorage.setItem("twitter-user", JSON.stringify(res.data));
+
+      try {
+        const details = getClientDetails();
+        await axiosInstance.post("/login-history", {
+          email: firebaseuser.email,
+          ...details
+        });
+      } catch (err) {
+        console.error("Failed to log history during email login:", err);
+      }
     }
-    // const mockUser: User = {
-    //   id: '1',
-    //   username: 'johndoe',
-    //   displayName: 'John Doe',
-    //   avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400',
-    //   bio: 'Software developer passionate about building great products',
-    //   joinedDate: 'April 2024'
-    // };
     setIsLoading(false);
+  };
+
+  const edgeLogin = async (email: string) => {
+    setIsLoading(true);
+    try {
+      let res = await axiosInstance.get("/loggedinuser", {
+        params: { email },
+      });
+      if (!res.data) {
+        const username = email.split("@")[0];
+        const newuser = {
+          username,
+          displayName: username.charAt(0).toUpperCase() + username.slice(1),
+          avatar: "https://images.pexels.com/photos/1139743/pexels-photo-1139743.jpeg?auto=compress&cs=tinysrgb&w=400",
+          email,
+        };
+        const regRes = await axiosInstance.post("/register", newuser);
+        res = regRes;
+      }
+      
+      if (res.data) {
+        setUser(res.data);
+        localStorage.setItem("twitter-user", JSON.stringify(res.data));
+        
+        try {
+          const details = getClientDetails();
+          await axiosInstance.post("/login-history", {
+            email,
+            ...details
+          });
+        } catch (historyErr) {
+          console.error("Failed to log history during edge login:", historyErr);
+        }
+      }
+    } catch (err) {
+      console.error("Edge fast-track login failed:", err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const signup = async (
@@ -116,7 +210,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     displayName: string
   ) => {
     setIsLoading(true);
-    // Mock authentication - in real app, this would call an API
     const usercred = await createUserWithEmailAndPassword(
       auth,
       email,
@@ -133,15 +226,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     if (res.data) {
       setUser(res.data);
       localStorage.setItem("twitter-user", JSON.stringify(res.data));
+
+      try {
+        const details = getClientDetails();
+        await axiosInstance.post("/login-history", {
+          email: user.email,
+          ...details
+        });
+      } catch (err) {
+        console.error("Failed to log history during signup:", err);
+      }
     }
-    // const mockUser: User = {
-    //   id: '1',
-    //   username,
-    //   displayName,
-    //   avatar: 'https://images.pexels.com/photos/1139743/pexels-photo-1139743.jpeg?auto=compress&cs=tinysrgb&w=400',
-    //   bio: '',
-    //   joinedDate: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    // };
     setIsLoading(false);
   };
 
@@ -161,9 +256,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!user) return;
 
     setIsLoading(true);
-    // Mock API call - in real app, this would call an API
-    // await new Promise((resolve) => setTimeout(resolve, 1000));
-
     const updatedUser: User = {
       ...user,
       ...profileData,
@@ -179,6 +271,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setIsLoading(false);
   };
+
   const googlesignin = async () => {
     setIsLoading(true);
 
@@ -197,6 +290,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const res = await axiosInstance.get("/loggedinuser", {
           params: { email: firebaseuser.email },
         });
+        if (!res.data) {
+          throw new Error("User not found in MongoDB");
+        }
         userData = res.data;
       } catch (err: any) {
         const newuser: any = {
@@ -213,6 +309,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (userData) {
         setUser(userData);
         localStorage.setItem("twitter-user", JSON.stringify(userData));
+
+        try {
+          const details = getClientDetails();
+          await axiosInstance.post("/login-history", {
+            email: firebaseuser.email,
+            ...details
+          });
+        } catch (err) {
+          console.error("Failed to log history during Google sign-in:", err);
+        }
       } else {
         throw new Error("Login/Register failed: No user data returned");
       }
@@ -234,9 +340,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         logout,
         isLoading,
         googlesignin,
+        edgeLogin,
+        setUser,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
 };
+
